@@ -1,0 +1,81 @@
+name: Integration
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - '.github/workflows/integration.yml'
+  pull_request:
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - '.github/workflows/integration.yml'
+env:
+  GOPROXY: "https://proxy.golang.org"
+
+jobs:
+  pgrok:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.20.x
+          cache: true
+      - name: Install Task
+        uses: arduino/setup-task@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start pgrokd
+        run: |
+          task build-pgrokd
+          task pgrokd &
+      - name: Start echo server
+        run: |
+          go build -o ./.bin/echo-server ./tests/echo-server
+          ./.bin/echo-server &
+      - name: Start pgrok
+        run: |
+          # Token will be override with CLI flag
+          go run ./cmd/pgrok init --remote-addr localhost:2222 --forward-addr 2830 --token BAD_VALUE
+          go run ./cmd/pgrok http --token REDACTED &
+      - name: Run tests
+        run: |
+          sleep 5
+          response=$(curl http://unknwon.localhost:3000?echo=hello)
+          if [[ "response" -ne "hello" ]] ; then
+            echo "Unexpected response: $response"
+          else
+            exit 0
+          fi
+
+  ssh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.20.x
+          cache: true
+      - name: Install Task
+        uses: arduino/setup-task@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start pgrokd
+        run: |
+          task pgrokd &
+      - name: Start local server
+        run: |
+          go run ./tests/local-server &
+      - name: Start ssh -R
+        run: |
+          ssh -R TODO
+      - name: Run tests
+        run: |
+          curl http://unknwon.localhost:3000
+          TODO: Assert return value
